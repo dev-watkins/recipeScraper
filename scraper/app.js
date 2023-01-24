@@ -16,47 +16,49 @@ const formatResponse = (statusCode, body) => {
 exports.handler = async (event) => {
   console.log(event);
   try {
-    let recipe, response;
+    let response;
 
     const res = await axios.get(event.queryStringParameters.url);
     const html = res.data;
 
     const $ = cheerio.load(html);
 
-    const rawJsonLd = JSON.stringify(
-      $("script[type='application/ld+json']")
-        .toArray()
-        .map((el) => {
-          return el.children[0].data.replace(/\n/g, '').trim();
-        })
-    );
+    const parsedJsonLd = $("script[type='application/ld+json']")
+      .toArray()
+      .map((el) => {
+        return JSON.parse(el.children[0].data.replace(/\n/g, '').trim());
+      })
+      .map((el) => {
+        if (el instanceof Array) {
+          return el.find(
+            (val) =>
+              val['@type'] === 'Recipe' || val['@type'].includes('Recipe')
+          );
+        }
+        return el;
+      });
 
-    if (!rawJsonLd) {
+    console.log(parsedJsonLd);
+
+    if (!parsedJsonLd.length) {
       response = formatResponse(400, {
         message: 'site not supported',
       });
       return response;
     }
-    const parsedJsonLd = JSON.parse(rawJsonLd).map((el) => JSON.parse(el));
 
-    parsedJsonLd.forEach((element) => {
+    const recipe = parsedJsonLd.filter((element) => {
       if (!element['@type'] && element['@graph']) {
-        recipe = element['@graph'].find(
+        return element['@graph'].find(
           (val) => val['@type'] === 'Recipe' || val['@type'].includes('Recipe')
         );
-        return;
       }
-      if (element instanceof Array) {
-        recipe = element.find(
-          (val) => val['@type'] === 'Recipe' || val['@type'].includes('Recipe')
-        );
-      } else if (
-        element['@type'] === 'Recipe' ||
-        element['@type'].includes('Recipe')
-      ) {
-        recipe = element;
-      }
-    });
+
+      if (element['@type'] === 'Recipe' || element['@type'].includes('Recipe'))
+        return true;
+
+      return false;
+    })[0];
 
     console.log(recipe);
 
